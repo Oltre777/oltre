@@ -1,5 +1,6 @@
-pyTelegramBotAPI==4.14.1
 flask
-python-telegram-bot
-requests
+pyTelegramBotAPI
+langchain
+chromadb
+PyPDF2
 openai
