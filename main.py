@@ -21,3 +21,7 @@ def index():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    bot.remove_webhook()
+    bot.set_webhook(url=f"https://ha-telegram-bot.onrender.com/{TOKEN}")
+    app.run(host="0.0.0.0", port=10000)
