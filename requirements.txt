@@ -1,6 +1,6 @@
+langchain
+langchain-community
+openai
+chromadb
 flask
 pyTelegramBotAPI
-langchain
-chromadb
-PyPDF2
-openai
