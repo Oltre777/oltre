@@ -1,27 +1,42 @@
 import os
+import time
+import logging
+from collections import defaultdict
 from flask import Flask, request
 import telebot
 
-# ====== 1. КЛЮЧИ И ФАЙЛЫ ======
+# ====== 1. КЛЮЧИ И ФАЙЛЫ =========================================
 TOKEN        = os.environ["TELEGRAM_BOT_TOKEN"]
 OPENAI_KEY   = os.environ["OPENAI_API_KEY"]
 PDF_PATH     = "HomeAlanya_Bot_Knowledge_RU.pdf"
 VECTOR_DIR   = "chroma_db"
 
-# ====== 2. AI-БИБЛИОТЕКИ ======
-from langchain.document_loaders import PyPDFLoader
+# ====== 2. AI-БИБЛИОТЕКИ =========================================
+from langchain_community.document_loaders import PyPDFLoader   # <-- langchain-community
 from langchain.text_splitter     import RecursiveCharacterTextSplitter
 from langchain.vectorstores      import Chroma
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.chains            import RetrievalQA
 from langchain.chat_models       import ChatOpenAI
 
-# ====== 3. ИНИЦИАЛИЗАЦИЯ ======
+# ====== 3. НАСТРОЙКА БОТА, ЛОГОВ, АНТИ-СПАМА =====================
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 os.environ["OPENAI_API_KEY"] = OPENAI_KEY
 
-# Загружаем PDF в память
+# —---------- логирование
+logging.basicConfig(
+    filename="log.txt",
+    level=logging.INFO,
+    format="%(asctime)s — %(message)s",
+    encoding="utf-8"
+)
+
+# —---------- анти-спам (5 секунд между сообщениями)
+user_last_msg = defaultdict(lambda: 0)
+SPAM_TIMEOUT  = 5  # секунд
+
+# ====== 4. ЗАГРУЗКА PDF В ПАМЯТЬ =================================
 loader   = PyPDFLoader(PDF_PATH)
 pages    = loader.load()
 chunks   = RecursiveCharacterTextSplitter(
@@ -35,7 +50,7 @@ qa = RetrievalQA.from_chain_type(
         llm=ChatOpenAI(model_name="gpt-3.5-turbo", temperature=0),
         retriever=retriever)
 
-# ====== 4. WEBHOOK ДЛЯ TELEGRAM ======
+# ====== 5. WEBHOOK ДЛЯ TELEGRAM ==================================
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
@@ -46,7 +61,7 @@ def webhook():
 def index():
     return "Бот работает!"
 
-# ====== 5. ОБРАБОТКА СООБЩЕНИЙ ======
+# ====== 6. ОБРАБОТКА СООБЩЕНИЙ ===================================
 @bot.message_handler(commands=["start"])
 def greet(m):
     msg = (
@@ -61,6 +76,14 @@ def greet(m):
 
 @bot.message_handler(func=lambda _: True)
 def answer(m):
+    now = time.time()
+    if now - user_last_msg[m.chat.id] < SPAM_TIMEOUT:
+        bot.send_message(m.chat.id, "⏳ Пожалуйста, подождите пару секунд перед следующим сообщением.")
+        return
+    user_last_msg[m.chat.id] = now
+
+    logging.info(f"[IN]  {m.chat.id} | {m.text}")
+
     reply = qa.run(m.text)
     if "I don't know" in reply or reply.strip() == "":
         reply = (
@@ -68,9 +91,11 @@ def answer(m):
             "Я передам ваш вопрос специалисту. "
             "Пожалуйста, оставьте номер телефона 📞"
         )
+
+    logging.info(f"[OUT] {m.chat.id} | {reply}")
     bot.send_message(m.chat.id, reply)
 
-# ====== 6. ЗАПУСК ======
+# ====== 7. ЗАПУСК СЕРВЕРА ========================================
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=f"https://ha-telegram-bot.onrender.com/{TOKEN}")
